@@ -1,0 +1,307 @@
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head th:include="layout :: head(title=~{::title},links=~{})">
+<title>Fill Prescriptions</title>
+</head>
+<style>
+			.leftDiv
+			{
+				float: left;
+			}
+			.rightDiv
+			{
+				float: right;
+			}
+			.radioDiv
+			{
+				display: flex;
+			}
+			.buttonDiv
+			{
+				margin-left: 5px;
+			}			
+		</style>
+<body th:include="layout :: body" th:with="content=~{::content}">
+	<div th:fragment="content">
+
+
+		<script th:inline="javascript">
+      /*<![CDATA[*/
+      var app = angular.module("fillPrescriptionPharmacyApp", []);
+
+      app.controller('fillPrescriptionPharmacyCtrl', function ($scope, $http) {
+        $scope.patients = [];
+        $scope.prescriptions = [];
+        $scope.currentPatient = {};
+        $scope.successMessage = "";
+        $scope.notifyMessage = "";
+        $scope.errorMessage = "";
+        $scope.pattern = /^\d{4}-\d{4}-\d{2}$/;
+        $scope.loadPatientTable = function () {
+
+         //This grabs the current Pharmacy object from the user
+         $http.get("/iTrust2/api/v1/pharmacies/current").then(
+            function (response) {
+              $scope.currentPharmacy = response.data;
+              //Gets a list of all patients
+              $http.get("/iTrust2/api/v1/patients").then(
+              	function (response) {
+            	  $scope.patientList = response.data;
+	              //This grabs all the prescriptions at the pharmacy
+	              $http.get("/iTrust2/api/v1/pharmacies/prescriptions/" + $scope.currentPharmacy.name).then(
+	            		  function (response) {
+	            			 //This runs through all the prescriptions and grabs the patients
+	            			 $scope.prescriptionList = response.data;
+	            			 $scope.prescriptionList.forEach(function (prescription) {
+	            				 if (prescription.status === "Filled") {
+	            					 return;
+	            				 }
+	            				 $scope.patientList.forEach(function (patient) {
+	            					if (patient.firstName === prescription.patient) {
+	 		            				$scope.patients.push(patient);
+	 		            				prescription.patient = patient;
+	 		            			 } 
+	            				 });
+	            			 });
+	            			 $scope.message = "";
+	            		  }, function (rejection) {
+	            			  $scope.patients = [];
+	                          $scope.message = "Could not display patients";
+	            		  });
+	              $scope.message = "";
+	            }, function (rejection) {
+	              $scope.patients = [];
+	              $scope.message = "Could not display patients";
+	            });
+            }, function (rejection) {
+            	$scope.patients = [];
+	            $scope.message = "Could not display patients";
+            });
+        }
+        $scope.loadPatientTable();
+        
+        $scope.selectPatient = function (patient) {
+        	$scope.selectedPatient = true;
+		    $scope.prescriptions = [];
+		 	$scope.prescriptionList.forEach(function (prescription) {
+		 		if (prescription.status === "Filled") {
+ 					return;
+				}
+		 		if (prescription.patient.firstName === patient.firstName && prescription.patient.lastName === patient.lastName) {
+		 			$scope.prescriptions.push(prescription);
+		 		}
+		 	})
+		 	$scope.message = "";
+        	$scope.currentPatient = patient.firstName.concat(" ").concat(patient.lastName);
+        }
+        
+        
+        $scope.selectPrescription = function (prescription) {
+        	//Set selected drug to name of this drug
+        	$scope.selectedPrescription = true;
+        	$scope.currentPrescription = prescription;
+        	$scope.checkClickedType(prescription);
+        }
+        
+        $scope.fillPrescription = function (prescription) {
+        	console.log(prescription);
+        	$scope.prescriptionForm = {};
+        	$scope.prescriptionForm.drug = prescription.drug;
+        	$scope.prescriptionForm.dosage = prescription.dosage;
+        	$scope.prescriptionForm.startDate = prescription.startDate;
+        	$scope.prescriptionForm.endDate = prescription.endDate;
+        	$scope.prescriptionForm.renewals = prescription.renewals;
+        	$scope.prescriptionForm.patient = prescription.patient.self;
+        	$scope.prescriptionForm.status = "Filled";
+        	$scope.prescriptionForm.id = prescription.id;
+
+        	if (!$scope.drugInStock) {
+        		$scope.prescriptionForm.status = "Cancelled";
+        	}
+        	
+        	$http({
+                method: 'PUT',
+                url: '/iTrust2/api/v1/prescriptions',
+                data: $scope.prescriptionForm
+            }).then(function (response) {
+            	if ($scope.notifyPatient) {
+            		$scope.successMessage = "Patient has been notified";
+            	} else {
+            		$scope.successMessage = "Prescription filled successfully";
+            	}
+            }, function (rejection) {
+                $scope.message = "";
+                $scope.errorMesssge = "Error occurred filling prescription.";
+            })
+        	//Do a post
+        }
+        $scope.selectedPatient = false;
+        $scope.selectedPrescription = false;
+        
+        $scope.checkClickedType = function (prescription) {
+        	$scope.drugInStock = false;
+        	$scope.preferenceGiven = true;
+        	console.log(prescription);
+        	if (prescription.patient.prescriptionPreference !== "Generic" && prescription.patient.prescriptionPreference !== "BrandName") {
+        		$scope.preferenceGiven = false;
+        		$scope.notifyMessage = "Patient has no drug preference. Please select drug type.";
+        	} 
+       		$http.get("/iTrust2/api/v1/pharmacies/drugs/" + $scope.currentPharmacy.name).then(
+           		function (response) {
+            		$scope.stockedDrugList = response.data;
+            		$scope.stockedDrugList.forEach(function (drug) {
+            			console.log(drug);
+            			if (drug.name === prescription.drugName) {
+            				$scope.drugInStock = true;
+            				if (drug.type === "Generic" && prescription.patient.prescriptionPreference === "Generic") {
+            					$scope.clickedGeneric = true;
+            	        		$scope.clickedBrand = false;
+            	        		$scope.preferenceGiven = true;
+            				} 
+            			}
+            		})
+		    		if (!$scope.drugInStock) {
+		    			$scope.errorMessage = "Error: Drug not currently available. Patient will be notified.";
+		    			$scope.notifyPatient = true;
+		    			$scope.notifyMessage = "";
+		    		}
+            		if (!$scope.clickedGeneric && $scope.preferenceGiven) {
+                    	$scope.clickedBrand = true;
+                    	$scope.preferenceGiven = true;
+                    	if (prescription.patient.prescriptionPreference === "Generic") {
+                    		$scope.notifyMessage = "Drug Preference not available. Patient will be notified.";
+                    		$scope.notifyPatient = true;
+                    	}
+            		}
+            		
+            		console.log($scope.clickedBrand);
+            		console.log($scope.clickedGeneric);
+            	}, function (rejection) {
+            		$scope.stockedDrugList = [];
+            		$scope.message = "Can't load stocked drugs";
+            	});
+        }
+      });
+			/*]]>*/
+    </script>
+
+		<div ng-app="fillPrescriptionPharmacyApp" ng-controller="fillPrescriptionPharmacyCtrl">
+			<div class="container">
+				<div class="row">
+					<div class="col-md-12">
+						<div class="panel panel-primary">
+							<div class="panel-heading">
+								<h3>Fill Prescriptions</h3>
+							</div>
+							<div class="panel-body">
+								<div style="overflow-y: scroll;">
+									<table class="table table-bordered">
+										<caption>Current Patients:</caption>
+										<thead>
+											<tr>
+												<th>Last Name</th>
+												<th>First Name</th>
+												<th>Sex</th>
+												<th>Date of Birth</th>
+												<th>Drug Preference</th>
+												<th>Select Patient</th>
+											</tr>
+										</thead>
+										<tbody>
+											<tr name="patientTableRow"
+												ng-repeat="p in patients | orderBy: 'lastName' track by $index"
+												patientId={{p.id}}>
+												<td name="lastNameCell">{{p.lastName}}</td>
+												<td name="firstNameCell">{{p.firstName}}</td>
+												<td name="sexCell">{{p.gender}}</td>
+												<td name="dateOfBirthCell">{{p.dateOfBirth | date : 'MM/dd/yyyy'}}</td>
+												<td name="preferenceCell">{{p.prescriptionPreference}}</td>
+												<td name="selectPatientCell">
+													<div class="row text-center">
+														<div class="col-md-6">
+															<input type="button" value="Select Patient" class="btn btn-primary" name="selectPatient" id="{{p.lastName}}-select" ng-click="selectPatient(p)"/>                          
+														</div>
+													</div>
+												</td>
+											</tr>
+										</tbody>
+									</table>
+								</div>
+								<div ng-show="selectedPatient" ng-hide="!selectedPatient" class="row  ng-cloak">
+									<div class="leftDiv">
+										<table class="table table-bordered">
+											<caption>Current Prescriptions:</caption>
+											<thead>
+												<tr>
+													<th>Name</th>
+													<th>Dosage</th>
+													<th>Start Date</th>
+													<th>End Date</th>
+													<th>Renewals</th>
+													<th>Select Prescription</th>
+												</tr>
+											</thead>
+											<tbody>
+												<tr name="prescriptionTableRow"
+													ng-repeat="pr in prescriptions | orderBy: 'drug'"
+													patientId={{pr.id}}>
+													<td name="NameCell">{{pr.drugName}}</td>
+													<td name="dosageCell">{{pr.dosage}}</td>
+													<td name="startCell">{{pr.startDate | date : 'MM/dd/yyyy'}}</td>
+													<td name="endCell">{{pr.endDate | date : 'MM/dd/yyyy'}}</td>
+													<td name="renewalCell">{{pr.renewals}}</td>
+													<td name="selectPrescriptionCell">
+														<div class="row text-center">
+															<div class="col-md-6">
+																<input type="button" value="Select Prescription" class="btn btn-primary" name="selectPrescription" id="{{pr.drug}}-select" ng-click="selectPrescription(pr)"/>                          
+															</div>
+														</div>
+													</td>
+												</tr>
+											</tbody>
+										</table>
+									</div>
+									<div ng-show="selectedPrescription" class="form-group col-md-4 ng-cloak">
+										<label for="type">Patient:</label>
+										<label for="type">{{currentPatient}}</label><br><br>
+										<label for="type">Drug Name:</label>
+										<label for="type">{{currentPrescription.drugName}}</label><br><br>
+										<div class="form-group">
+											<div class="radioDiv">
+												<label for="type">Drug Type:</label>
+												<div class="buttonDiv">
+													<input type="radio" id="brand" name="drugType" value="brand" ng-checked="clickedBrand" ng-disabled="preferenceGiven">
+													<label for="brand">Brand</label>
+													<br/>
+													<input type="radio" id="generic" name="drugType" value="generic" ng-checked="clickedGeneric" ng-disabled="preferenceGiven">
+													<label for="generic">Generic</label>
+												</div>
+											</div>
+											<br/>
+											<input type="button" value="Fill Prescription" class="btn btn-success" name="fillPrescription" id="fillPrescription-submit" 
+											ng-click="fillPrescription(currentPrescription)" />
+											<div>
+												<p style="color: green" ng-model="successMessage"
+													id="success">{{successMessage}}</p>
+											</div>
+											<div>
+												<p style="color: orange" ng-model="notifyMessage"
+													id="notify">{{notifyMessage}}</p>
+											</div>
+											<div>
+												<p style="color: red" ng-model="errorMessage"
+													id="error">{{errorMessage}}</p>
+											</div>
+										</div>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</body>
+
+</html>

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<!--Created by Ryan Catalfu with references to the W3 Schools HTML, AngularJS, and other Tutorials-->
+<!--Some code has been reused from provided files in iTrust2, or used as a guide.-->
+<html xmlns:th="http://www.thymeleaf.org">
+    <head th:include="layout :: head(title=~{::title},links=~{})">
+        <meta charset="UTF-8">
+        <title>
+            Default Pharmacy
+        </title>
+        <link rel="icon" type="image/x-icon" href="/iTrust2/resources/img/favicon.ico" />
+    </head>
+
+<body th:include="layout :: body" th:with="content=~{::content}">
+	<div th:fragment="content">
+
+		<!-- Script starts here. -->
+		<script>
+			var app = angular.module("defaultPharmacyApp", []);
+			app.controller("findPharmacyCtrl", function($scope, $http){
+				/**
+				 * This get retrieves enums from APIEnumController
+				 * Loads the specialty types from the API.
+				 */
+
+				$scope.pharmacies = [];
+		        $scope.loadPharmacies = function () {
+		          $http.get("/iTrust2/api/v1/pharmacies").then(
+		            function (response) {
+		              $scope.pharmacies = response.data;
+		              $scope.message = "";
+		            }, function (rejection) {
+		              $scope.pharmacies = [];
+		              $scope.message = "Could not display users";
+		            });
+		        }
+				
+				$scope.zip = "";
+				$scope.loadPatient = function () {
+					$http.get("/iTrust2/api/v1/patient").then(function(response) {
+					    $scope.patient = response.data;
+					    if ($scope.patient.defaultPharmacy === null || $scope.patient.defaultPharmacy===undefined) {
+					    	$scope.tmpPharmacy = "Not Specified";
+					    } else {
+					    	$scope.tmpPharmacy = $scope.patient.defaultPharmacy.name;
+					    }
+					}, function(rejection) {
+					    $scope.patient = "";
+					    $scope.tmpPharmacy= "Not Specified";
+					});
+				}
+				console.log($scope.patient);
+
+
+			
+				$scope.responseMessage = "";
+				$scope.submit= function(){
+					console.log($scope.zip)
+					
+					$http.get("/iTrust2/api/v1/pharmacies/zipcode/" + $scope.zip).then(function(response){
+						$scope.pharmacies = response.data;
+						console.log($scope.pharmacies);
+					},function(errorResponse){
+						console.log(errorResponse);
+						$scope.responseMessage = errorResponse.data.message;
+					})
+				}
+
+				$scope.getTemplate = function (pharmacy) {
+	          		return 'view';
+	        	};
+
+				$scope.submit2= function(pharmacy){
+					
+					
+					$http.put("/iTrust2/api/v1/patient/pharmacy/" + pharmacy.name).then(function(response){
+						$scope.tmpPharmacy = pharmacy.name;
+						$scope.successMessage = "Default Pharmacy selected successfully.";
+						$scope.errorMessage = "";
+					},function(errorResponse){
+						$scope.successMessage = "";
+						$scope.errorMessage = "Error setting Default Pharmacy.";
+					})
+					$scope.loadPatient();
+				}
+			$scope.loadPharmacies();
+			$scope.loadPatient();
+			});
+		</script>
+		<!-- End of the script -->
+
+		<!-- This div is the app, which contains the table and page design. -->
+		<div ng-app="defaultPharmacyApp" ng-controller="findPharmacyCtrl">
+			<!-- This is the page container. Adapted from viewPrescriptions.html -->
+			<h3 id="pharmacyRN">Default Pharmacy: <span ng-bind= "tmpPharmacy"></span></h3>
+			<div class="container" id="expertcontainer">
+				<div class="row">
+					<div class="col-md-12">
+						<!-- Everything is in this primary box. -->
+						<div class="panel panel-primary">
+							<!-- This is the panel heading area -->
+							<div class="panel-heading">
+								<h3 id="findpharmacyheading">Select Default Pharmacy</h3>
+							</div>
+							<!-- Next is the body of the panel. -->
+							<div class="panel-body">
+								<!-- I need two columns in here. Bootstrap can help! -->
+								<!-- This first one is for the form. -->
+								<div class="col-md-4" id="expertFormColumn">
+									<!-- Referenced W3Schools Bootstrap Form page. -->
+									<!-- And HTML Forms page at W3Schools. -->
+
+									<form ng-submit="submit()" name="findPharForm">
+										<div class="form-group">
+											<label for="zipCode">Filter by Zip Code 
+												</label> <input ng-model="zip" name="zipCode"
+												type="text" class="form-control" id="zipCode"
+												placeholder="#####-####" pattern="[0-9]{5}(-[0-9]{4})?"
+												title="5-digit Zip Code or Full 5+4 Zip Code." required>
+											<div class="has-error"
+												ng-show="findPharForm.zipCode.$touched">
+												<span style="color: red;"
+													ng-show="findPharForm.zipCode.$error.pattern">
+													Invalid Zip Code. </span>
+											</div>
+										</div>
+
+										<button
+											ng-disabled="
+                                            findPharForm.zipCode.$pattern ||
+                                            findPharForm.zipCode.$invalid"
+											type="submit" class="btn btn-default" name="findPharmacy"
+											id="findPharmacyBtn" >Find Pharmacy</button>
+
+									</form>
+								</div>
+								<!-- This second one is for the table. Required hiding. -->
+								<!-- Used Bootstrap collapse for the "table." -->
+								<!-- Referenced and used code design from W3Schools at bit.ly/w3Collapse. -->
+								<div class="col-md-8" id="expertTableColumn">
+									<form ng-submit="submit2()" name="findExpertsForm">
+										<div class="form-group">
+											<table class="table table-bordered">
+												<caption>Existing Pharmacies:</caption>
+												<thead>
+													<tr>
+														<th>Pharmacy Name</th>
+														<th>Address</th>
+														<th>State</th>
+														<th>Zip Code</th>
+														<th>Select Pharmacy</th>
+													</tr>
+												</thead>
+												<tbody>
+													<tr name="pharmacyTableRow"
+														ng-repeat="h in pharmacies | orderBy: 'name'"
+														ng-include=getTemplate(h) userId={{h.name}}>
+													</tr>
+												</tbody>
+											</table>
+											<!-- table in view mode -->
+											<script type="text/ng-template" id="view">
+							  
+			                  <td name="nameCell">{{h.name}}</td>
+			                  <td name="addressCell">{{h.address}}</td>
+			                  <td name="stateCell">{{h.state}}</td>
+			                  <td name="zipCell">{{h.zip}}</td>
+			                  <td>
+			                    <div class="row text-center">
+			                      <div class="col-md-6">
+			                          <input type="button" value="Select" class="btn btn-primary" name="selectPharmacy" id="{{h.name}}-select" ng-click="submit2(h)"/>                          
+			                      </div>
+			                    </div>
+			                  </td>
+			                  /*]]>*/
+			                </script>
+										</div>
+										<!-- <button
+												type="submit" class="btn btn-default" name="submit"
+												id="submitPharmacyBtn" >Submit</button> -->
+
+									</form>
+									<div>
+										<p style="color: red" ng-model="errorMessage" id="errP">{{errorMessage}}</p>
+									</div>
+									<div>
+										<p style="color: green" ng-model="successMessage"
+											id="success">{{successMessage}}</p>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+
+		</div>
+
+
+	</div>
+</body>
+</html>
